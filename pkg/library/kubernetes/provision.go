@@ -144,7 +144,10 @@ func addMetadata(obj client.Object, workspace *common.DevWorkspaceWithConfig, ap
 			MountPath: "/projects",
 			SubPath:   "projects",
 		})
-
+		newObj.Spec.Template.Spec.Containers[0].Env = append(newObj.Spec.Template.Spec.Containers[0].Env,corev1.EnvVar{
+            Name: "DEVWORKSPACE_ID",
+            Value: workspace.Status.DevWorkspaceId
+        },)
 		newObj.Spec.Template.Spec.Volumes = append(newObj.Spec.Template.Spec.Volumes, corev1.Volume{
 			Name: "storage-" + workspace.Status.DevWorkspaceId,
 			VolumeSource: corev1.VolumeSource{
