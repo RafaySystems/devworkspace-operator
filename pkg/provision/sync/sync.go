@@ -36,7 +36,11 @@ import (
 // Instead, SyncUnrecognizedObjectWithCluster should be used.
 func IsRecognizedObject(specObj crclient.Object) bool {
 	objType := reflect.TypeOf(specObj).Elem()
-	_, ok := diffFuncs[objType]
+        _, ok := diffFuncs[objType]
+	if !ok {
+          _, ok = diffFuncs[reflect.TypeOf(specObj)]
+	}
+
 	return ok
 }
 
@@ -62,7 +66,10 @@ func SyncObjectWithCluster(specObj crclient.Object, api ClusterAPI) (crclient.Ob
 
 	diffFunc := diffFuncs[objType]
 	if diffFunc == nil {
-		return nil, &UnrecoverableSyncError{fmt.Errorf("attempting to sync unrecognized object %s", objType)}
+                diffFunc = diffFuncs[reflect.TypeOf(specObj)]
+		if diffFunc == nil {
+	        	return nil, &UnrecoverableSyncError{fmt.Errorf("attempting to sync unrecognized object %s", objType)}
+         	}
 	}
 	shouldDelete, shouldUpdate := diffFunc(specObj, clusterObj)
 	if shouldDelete {
@@ -101,6 +108,7 @@ func SyncUnrecognizedObjectWithCluster(specObj crclient.Object, api ClusterAPI) 
 	}
 	update, delete := unrecognizedObjectDiffFunc(specObj, clusterObj)
 	if update {
+                printDiff(specObj, clusterObj, api.Logger)
 		toUpdate, err := unrecognizedObjectUpdateFunc(specObj, clusterObj)
 		if err != nil {
 			return nil, &UnrecoverableSyncError{err}
@@ -166,7 +174,7 @@ func updateObjectGeneric(specObj, clusterObj crclient.Object, api ClusterAPI) er
 	switch {
 	case err == nil:
 		api.Logger.Info("Updated object", "kind", reflect.TypeOf(specObj).Elem().String(), "name", specObj.GetName())
-		return NewNotInSync(specObj, UpdatedObjectReason)
+		return nil
 	case k8sErrors.IsConflict(err), k8sErrors.IsNotFound(err):
 		// Need to catch IsNotFound here because we attempt to update when creation fails with AlreadyExists
 		return NewNotInSync(specObj, NeedRetryReason)

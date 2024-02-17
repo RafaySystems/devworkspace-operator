@@ -19,6 +19,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"strings"
 
 	maputils "github.com/devfile/devworkspace-operator/internal/map"
 	"github.com/devfile/devworkspace-operator/pkg/constants"
@@ -36,7 +37,7 @@ func (h *WebhookHandler) MutateWorkspaceV1alpha1OnCreate(ctx context.Context, re
 		return admission.Errored(http.StatusBadRequest, err)
 	}
 
-	wksp.Labels = maputils.Append(wksp.Labels, constants.DevWorkspaceCreatorLabel, req.UserInfo.UID)
+	wksp.Labels = maputils.Append(wksp.Labels, constants.DevWorkspaceCreatorLabel, strings.Replace(req.UserInfo.UID,":","_",2)+"_A")
 
 	if err := h.validateKubernetesObjectPermissionsOnCreate_v1alpha1(ctx, req, &wksp.Spec.Template); err != nil {
 		return admission.Denied(err.Error())
@@ -51,8 +52,8 @@ func (h *WebhookHandler) MutateWorkspaceV1alpha2OnCreate(ctx context.Context, re
 	if err != nil {
 		return admission.Errored(http.StatusBadRequest, err)
 	}
-
-	wksp.Labels = maputils.Append(wksp.Labels, constants.DevWorkspaceCreatorLabel, req.UserInfo.UID)
+        
+	wksp.Labels = maputils.Append(wksp.Labels, constants.DevWorkspaceCreatorLabel, strings.Replace(req.UserInfo.UID,":","_",2)+"_A")
 
 	if err := h.validateUserPermissions(ctx, req, wksp, nil); err != nil {
 		return admission.Denied(err.Error())
@@ -85,7 +86,7 @@ func (h *WebhookHandler) MutateWorkspaceV1alpha1OnUpdate(ctx context.Context, re
 		return admission.Denied("DevWorkspace ID cannot be changed once it is set")
 	}
 
-	allowed, msg := h.checkRestrictedAccessWorkspaceV1alpha1(oldWksp, newWksp, req.UserInfo.UID)
+	allowed, msg := h.checkRestrictedAccessWorkspaceV1alpha1(oldWksp, newWksp, strings.Replace(req.UserInfo.UID,":","_",2)+"_A")
 	if !allowed {
 		return admission.Denied(msg)
 	}
@@ -161,7 +162,7 @@ func (h *WebhookHandler) MutateWorkspaceV1alpha2OnUpdate(ctx context.Context, re
 	// 	}
 	// }
 
-	allowed, msg := h.checkRestrictedAccessWorkspaceV1alpha2(oldWksp, newWksp, req.UserInfo.UID)
+	allowed, msg := h.checkRestrictedAccessWorkspaceV1alpha2(oldWksp, newWksp, strings.Replace(req.UserInfo.UID,":","_",2)+"_A")
 	if !allowed {
 		return admission.Denied(msg)
 	}

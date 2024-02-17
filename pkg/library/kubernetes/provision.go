@@ -22,6 +22,8 @@ import (
 	"github.com/devfile/devworkspace-operator/pkg/constants"
 	"github.com/devfile/devworkspace-operator/pkg/dwerrors"
 	"github.com/devfile/devworkspace-operator/pkg/provision/sync"
+	v1 "k8s.io/api/apps/v1"
+	corev1 "k8s.io/api/core/v1"
 	k8sErrors "k8s.io/apimachinery/pkg/api/errors"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
@@ -39,6 +41,7 @@ func HandleKubernetesComponents(workspace *common.DevWorkspaceWithConfig, api sy
 	if err != nil {
 		return err
 	}
+	api.Logger.Info("Total Kube Components", "count", len(kubeComponents))
 	if len(kubeComponents) == 0 {
 		if len(warnings) > 0 {
 			return &dwerrors.WarningError{
@@ -48,24 +51,31 @@ func HandleKubernetesComponents(workspace *common.DevWorkspaceWithConfig, api sy
 		return nil
 	}
 	for _, component := range kubeComponents {
+		api.Logger.Info("Kube Components", "component", component)
 		// Ignore error as we filtered list above
 		k8sLikeComponent, _ := getK8sLikeComponent(component)
 		obj, err := deserializeToObject([]byte(k8sLikeComponent.Inlined), api)
 		if err != nil {
+			api.Logger.Info("Kube Components", "process failr", err)
 			return &dwerrors.FailError{Message: fmt.Sprintf("could not process component %s", component.Name), Err: err}
 		}
 		if err := addMetadata(obj, workspace, api); err != nil {
+			api.Logger.Info("Kube Components", "addmeta", err)
 			return &dwerrors.RetryError{Message: fmt.Sprintf("failed to add ownerref for component %s", component.Name), Err: err}
 		}
 		if err := checkForExistingObject(obj, api); err != nil {
+			api.Logger.Info("Kube Components", "existing", err)
 			return &dwerrors.FailError{Message: fmt.Sprintf("could not process component %s", component.Name), Err: err}
 		}
 		var syncErr error
 		if sync.IsRecognizedObject(obj) {
+			api.Logger.Info("recognized")
 			_, syncErr = sync.SyncObjectWithCluster(obj, api)
 		} else {
+			api.Logger.Info("unrecognized")
 			_, syncErr = sync.SyncUnrecognizedObjectWithCluster(obj, api)
 		}
+		api.Logger.Info("Kube Components", "syncErr", syncErr)
 		if syncErr != nil {
 			return dwerrors.WrapSyncError(syncErr)
 		}
@@ -118,6 +128,32 @@ func addMetadata(obj client.Object, workspace *common.DevWorkspaceWithConfig, ap
 	}
 	if obj.GetObjectKind().GroupVersionKind().Kind == "ConfigMap" {
 		newLabels[constants.DevWorkspaceWatchConfigMapLabel] = "true"
+	}
+	if obj.GetObjectKind().GroupVersionKind().Kind == "Deployment" {
+		newObj := obj.(*v1.Deployment)
+		newTemplateLabels := map[string]string{}
+		for k, v := range newObj.Spec.Template.GetLabels() {
+			newTemplateLabels[k] = v
+		}
+		newTemplateLabels[constants.DevWorkspaceIDLabel] = workspace.Status.DevWorkspaceId
+		newTemplateLabels[constants.DevWorkspaceCreatorLabel] = workspace.Labels[constants.DevWorkspaceCreatorLabel]
+		newObj.Spec.Template.SetLabels(newTemplateLabels)
+
+		newObj.Spec.Template.Spec.Containers[0].VolumeMounts = append(newObj.Spec.Template.Spec.Containers[0].VolumeMounts, corev1.VolumeMount{
+			Name:      "storage-" + workspace.Status.DevWorkspaceId,
+			MountPath: "/projects",
+			SubPath:   "projects",
+		})
+
+		newObj.Spec.Template.Spec.Volumes = append(newObj.Spec.Template.Spec.Volumes, corev1.Volume{
+			Name: "storage-" + workspace.Status.DevWorkspaceId,
+			VolumeSource: corev1.VolumeSource{
+				PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{
+					ClaimName: "storage-" + workspace.Status.DevWorkspaceId,
+				},
+			},
+		})
+
 	}
 	obj.SetLabels(newLabels)
 	return nil
